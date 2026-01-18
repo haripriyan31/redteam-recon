@@ -38,25 +38,40 @@ class PortScanService:
         return open_ports
 
     @staticmethod
-    def scan_nmap(ip: str) -> List[int]:
+    def scan_nmap(ip: str) -> List[Dict]:
         """
-        Scan using Nmap binary. Requires Nmap to be installed on system.
+        Scan using Nmap binary with service version detection (-sV).
+        Returns a list of dicts: {'port': int, 'service': str, 'version': str}
         """
         nm = nmap.PortScanner()
-        # Scan common ports with -sS (stealth) or -sT (connect) depending on privs
-        # Using -F (Fast mode) for demo speed, or specific ports
+        # -sV: Probe open ports to determine service/version info
+        # -T4: Aggressive timing template
+        # --open: Only show open ports
         ports_str = ",".join(map(str, PortScanService.COMMON_PORTS))
-        nm.scan(ip, ports_str, arguments='-T4')
+        try:
+            nm.scan(ip, ports_str, arguments='-sV -T4 --open')
+        except Exception as e:
+            print(f"Nmap scan error: {e}")
+            return []
         
-        open_ports = []
+        results = []
         if ip in nm.all_hosts():
             for proto in nm[ip].all_protocols():
                 lport = nm[ip][proto].keys()
                 for port in lport:
                     if nm[ip][proto][port]['state'] == 'open':
-                        open_ports.append(port)
+                        service_name = nm[ip][proto][port].get('product', '')
+                        version = nm[ip][proto][port].get('version', '')
+                        full_version = f"{service_name} {version}".strip()
+                        
+                        results.append({
+                            "port": port,
+                            "service": nm[ip][proto][port]['name'],
+                            "version": full_version,
+                            "banner": full_version # Using version as banner for now
+                        })
         
-        return open_ports
+        return results
 
     @staticmethod
     def get_shodan_info(ip: str, api_key: str) -> Dict:

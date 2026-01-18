@@ -37,6 +37,7 @@ interface ScanResult {
     directories?: string[];
     screenshots?: Record<string, string>;
     vulnerabilities?: string[];
+    attack_score?: number;
 }
 
 export default function ScanResultsPage() {
@@ -91,7 +92,10 @@ export default function ScanResultsPage() {
                         {results?.status === 'running' && <span className="text-blue-400 animate-pulse text-sm ml-2 font-medium">• Scanning in Progress...</span>}
                     </div>
                 </div>
-                <div className="text-right">
+                <div className="text-right flex space-x-2">
+                    <Button variant="outline" onClick={() => window.open(`http://localhost:8000/api/scan/${results?.id}/export/spiderfoot`, '_blank')}>
+                        Export SpiderFoot
+                    </Button>
                     <Button variant="outline" onClick={() => window.location.reload()}>Refresh Results</Button>
                 </div>
             </div>
@@ -146,6 +150,16 @@ export default function ScanResultsPage() {
                     <CardContent>
                         <div className="text-2xl font-bold">{Object.keys(results?.screenshots || {}).length}</div>
                         <p className="text-xs text-muted-foreground">Screenshots captured</p>
+                    </CardContent>
+                </Card>
+                <Card className={results?.attack_score && results.attack_score > 50 ? "border-red-500 bg-red-500/10" : ""}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Attack Score</CardTitle>
+                        <ShieldAlert className={results?.attack_score && results.attack_score > 50 ? "h-4 w-4 text-red-500" : "h-4 w-4 text-muted-foreground"} />
+                    </CardHeader>
+                    <CardContent>
+                        <div className={`text-2xl font-bold ${results?.attack_score && results.attack_score > 50 ? "text-red-500" : ""}`}>{results?.attack_score || 0}</div>
+                        <p className="text-xs text-muted-foreground">Risk Level: {results?.attack_score && results.attack_score > 50 ? "High" : "Low"}</p>
                     </CardContent>
                 </Card>
             </div>

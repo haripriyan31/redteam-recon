@@ -16,7 +16,10 @@ from .services.subdomain import SubdomainService
 from .services.port_scan import PortScanService
 from .services.osint import OsintService
 from .services.fuzzing import FuzzingService
+from .services.fuzzing import FuzzingService
 from .services.visual_recon import VisualReconService
+from .services.scoring import ScoringService
+from .services.export import ExportService
 from .database import scan_collection
 
 import asyncio
@@ -109,6 +112,26 @@ async def run_scan_task(scan_id: str, domain: str, twitter_handle: str = None):
                 vulns.append("Apache: Check for Path Traversal (CVE-2021-41773)")
             if "PHP" in tech:
                  vulns.append("PHP: Check for Info Disclosure")
+        
+        # 7.5 Real Vuln Correlation from Ports
+        for p_res in ports_list:
+            if isinstance(p_res, PortResult): # It's a Pydantic model
+                # PortResult.ports is a list of ANY (int or dict)
+                for p_info in p_res.ports:
+                     if isinstance(p_info, dict):
+                         banner = p_info.get("banner", "")
+                         if "Apache" in banner:
+                             vulns.append(f"Apache Detected on port {p_info.get('port')}: Check CVEs for {banner}")
+
+        # 8. Scoring
+        scan_data_for_scoring = {
+            "ports": [p.dict() for p in ports_list],
+            "subdomains": sub_result.dict(),
+            "osint_data": osint_artifacts,
+            "technologies": tech_stack,
+            "vulnerabilities": vulns
+        }
+        attack_score = ScoringService.calculate_score(scan_data_for_scoring)
 
         # Update Result in DB
         result_update = {
@@ -119,7 +142,8 @@ async def run_scan_task(scan_id: str, domain: str, twitter_handle: str = None):
             "osint_data": osint_artifacts,
             "directories": directories,
             "screenshots": screenshots,
-            "vulnerabilities": vulns
+            "vulnerabilities": vulns,
+            "attack_score": attack_score
         }
         
         # Save to In-Memory
@@ -206,3 +230,29 @@ async def get_scan_history():
     except Exception as e:
         print(f"DB List Failed: {e}. Returning in-memory.")
         return [ScanResult(**scan) for scan in SCAN_RESULTS.values()]
+
+from fastapi.responses import Response
+
+@app.get("/api/scan/{scan_id}/export/spiderfoot")
+async def export_spiderfoot(scan_id: str):
+    # Fetch result
+    scan_data = None
+    try:
+        scan = await scan_collection.find_one({"id": scan_id})
+        if scan:
+            scan_data = scan
+    except: pass
+    
+    if not scan_data and scan_id in SCAN_RESULTS:
+        scan_data = SCAN_RESULTS[scan_id]
+        
+    if not scan_data:
+        raise HTTPException(status_code=404, detail="Scan not found")
+        
+    csv_content = ExportService.to_spiderfoot_csv(scan_data)
+    
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=spiderfoot_export_{scan_id}.csv"}
+    )

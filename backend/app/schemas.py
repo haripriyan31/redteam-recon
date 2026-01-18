@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union, Any
 from datetime import datetime
 
 class ScanRequest(BaseModel):
@@ -19,7 +19,7 @@ class SubdomainResult(BaseModel):
 
 class PortResult(BaseModel):
     ip: str
-    ports: List[int]
+    ports: List[Union[int, Dict[str, Any]]]
     banners: Optional[Dict[str, str]] = None
 
 class ScanResult(BaseModel):
@@ -34,4 +34,5 @@ class ScanResult(BaseModel):
     directories: Optional[List[str]] = None
     screenshots: Optional[Dict[str, str]] = None # subdomain -> b64
     vulnerabilities: Optional[List[str]] = None
+    attack_score: int = 0
 

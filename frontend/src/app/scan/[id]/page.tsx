@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, CheckCircle2, AlertCircle, Globe, Server, Cpu, ExternalLink, Calendar, Camera, ShieldAlert, AlertTriangle } from "lucide-react";
+import NetworkGraph from "@/components/NetworkGraph";
 
 interface SubdomainResult {
     subdomains: string[];
@@ -95,6 +96,9 @@ export default function ScanResultsPage() {
                 <div className="text-right flex space-x-2">
                     <Button variant="outline" onClick={() => window.open(`http://localhost:8000/api/scan/${results?.id}/export/spiderfoot`, '_blank')}>
                         Export SpiderFoot
+                    </Button>
+                    <Button variant="outline" onClick={() => window.open(`http://localhost:8000/api/scan/${results?.id}/report/pdf`, '_blank')}>
+                        Export PDF Report
                     </Button>
                     <Button variant="outline" onClick={() => window.location.reload()}>Refresh Results</Button>
                 </div>
@@ -265,6 +269,17 @@ export default function ScanResultsPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Network Visualization */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Attack Surface Graph</CardTitle>
+                    <CardDescription>Interactive visualization of discovered assets and relationships.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <NetworkGraph data={results} />
+                </CardContent>
+            </Card>
 
             {/* Visual Recon Gallery */}
             {results?.screenshots && Object.keys(results.screenshots).length > 0 && (

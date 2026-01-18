@@ -11,3 +11,4 @@ playwright
 certifi
 beautifulsoup4
 lxml
+reportlab

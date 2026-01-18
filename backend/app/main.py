@@ -19,7 +19,9 @@ from .services.fuzzing import FuzzingService
 from .services.fuzzing import FuzzingService
 from .services.visual_recon import VisualReconService
 from .services.scoring import ScoringService
+from .services.scoring import ScoringService
 from .services.export import ExportService
+from .services.report_service import ReportService
 from .database import scan_collection
 
 import asyncio
@@ -85,6 +87,13 @@ async def run_scan_task(scan_id: str, domain: str, twitter_handle: str = None):
         print("Running OSINT Scraper...")
         try:
             osint_artifacts = await OsintService.run_osint_scraper(domain, twitter_handle)
+            # 4.5. Cloud Recon (S3)
+            print("Running Cloud Recon...")
+            try:
+                s3_buckets = OsintService.check_s3_buckets(domain)
+                osint_artifacts.extend(s3_buckets)
+            except Exception as e:
+                print(f"Cloud Recon failed: {e}")
         except Exception as e:
             print(f"OSINT Scraper failed: {e}")
             osint_artifacts = []
@@ -255,4 +264,28 @@ async def export_spiderfoot(scan_id: str):
         content=csv_content,
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=spiderfoot_export_{scan_id}.csv"}
+    )
+
+@app.get("/api/scan/{scan_id}/report/pdf")
+async def export_pdf_report(scan_id: str):
+    # Fetch result
+    scan_data = None
+    try:
+        scan = await scan_collection.find_one({"id": scan_id})
+        if scan:
+            scan_data = scan
+    except: pass
+    
+    if not scan_data and scan_id in SCAN_RESULTS:
+        scan_data = SCAN_RESULTS[scan_id]
+        
+    if not scan_data:
+        raise HTTPException(status_code=404, detail="Scan not found")
+        
+    pdf_bytes = ReportService.generate_pdf_report(scan_data)
+    
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=report_{scan_id}.pdf"}
     )

@@ -129,3 +129,37 @@ class OsintService:
         # Deduplicate
         unique_results = {json.dumps(i, sort_keys=True): i for i in results}
         return list(unique_results.values())
+
+    @staticmethod
+    def check_s3_buckets(domain: str) -> List[Dict[str, Any]]:
+        """
+        Checks for open S3 buckets based on domain permutations.
+        """
+        results = []
+        base_name = domain.split('.')[0]
+        permutations = [
+            base_name,
+            f"www.{base_name}",
+            f"{base_name}-backup",
+            f"{base_name}-dev",
+            f"{base_name}-assets",
+            f"{base_name}-public",
+            domain.replace('.', '-')
+        ]
+        
+        print(f"Checking {len(permutations)} potential S3 buckets...")
+        
+        for p in permutations:
+            bucket_url = f"http://{p}.s3.amazonaws.com"
+            try:
+                # verify=False to avoid SSL errors on non-existent buckets sometimes
+                r = requests.get(bucket_url, timeout=3, verify=False)
+                if r.status_code == 200 and "ListBucketResult" in r.text:
+                    results.append(OsintService.normalize(bucket_url, "s3_bucket", "bruteforce", 1.0))
+                elif r.status_code == 403:
+                     # Exists but private
+                     results.append(OsintService.normalize(bucket_url, "s3_bucket", "bruteforce", 0.8)) # Found but locked
+            except:
+                pass
+                
+        return results

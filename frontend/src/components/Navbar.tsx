@@ -32,10 +32,12 @@ export function Navbar() {
                     </nav>
                 </div>
                 <div className="flex flex-1 items-center justify-end space-x-2">
-                    <Button variant="default" size="sm">
-                        <Plus className="mr-2 h-4 w-4" />
-                        New Scan
-                    </Button>
+                    <Link href="/">
+                        <Button variant="default" size="sm">
+                            <Plus className="mr-2 h-4 w-4" />
+                            New Scan
+                        </Button>
+                    </Link>
                 </div>
             </div>
         </nav>

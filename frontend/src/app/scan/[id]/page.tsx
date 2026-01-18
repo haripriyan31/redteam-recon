@@ -18,6 +18,13 @@ interface PortResult {
     ports: number[];
 }
 
+interface OSINTArtifact {
+    value: string;
+    type: string;
+    source: string;
+    confidence: number;
+}
+
 interface ScanResult {
     id: string;
     domain: string;
@@ -26,6 +33,7 @@ interface ScanResult {
     subdomains: SubdomainResult | null;
     ports: PortResult[] | null;
     technologies: string[] | null;
+    osint_data?: OSINTArtifact[];
     directories?: string[];
     screenshots?: Record<string, string>;
     vulnerabilities?: string[];
@@ -112,6 +120,16 @@ export default function ScanResultsPage() {
                 </Card>
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">OSINT Artifacts</CardTitle>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{results?.osint_data?.length || 0}</div>
+                        <p className="text-xs text-muted-foreground">Emails, Phones, Docs</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Technologies</CardTitle>
                         <Cpu className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
@@ -131,6 +149,66 @@ export default function ScanResultsPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* OSINT Results Section */}
+            {results?.osint_data && results.osint_data.length > 0 && (
+                <Card className="border-blue-900/50 bg-blue-950/10">
+                    <CardHeader>
+                        <CardTitle className="text-blue-400 flex items-center">
+                            <Globe className="w-5 h-5 mr-2" />
+                            OSINT Discovery Results
+                        </CardTitle>
+                        <CardDescription>
+                            Publicly available information scraped from various sources.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {/* Emails */}
+                            <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Emails</h3>
+                                <div className="space-y-1">
+                                    {results.osint_data.filter(i => i.type === 'email').map((item, i) => (
+                                        <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50 border">
+                                            <span className="font-mono truncate" title={item.value}>{item.value}</span>
+                                            <Badge variant="secondary" className="text-[10px] h-5">{item.source}</Badge>
+                                        </div>
+                                    ))}
+                                    {results.osint_data.filter(i => i.type === 'email').length === 0 && <span className="text-sm text-muted-foreground">None found</span>}
+                                </div>
+                            </div>
+                            {/* Phones */}
+                            <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Phone Numbers</h3>
+                                <div className="space-y-1">
+                                    {results.osint_data.filter(i => i.type === 'phone').map((item, i) => (
+                                        <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50 border">
+                                            <span className="font-mono">{item.value}</span>
+                                            <Badge variant="secondary" className="text-[10px] h-5">{item.source}</Badge>
+                                        </div>
+                                    ))}
+                                    {results.osint_data.filter(i => i.type === 'phone').length === 0 && <span className="text-sm text-muted-foreground">None found</span>}
+                                </div>
+                            </div>
+                            {/* Docs/PDFs */}
+                            <div className="space-y-2">
+                                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Documents (PDFs)</h3>
+                                <div className="space-y-1">
+                                    {results.osint_data.filter(i => i.type === 'pdf').map((item, i) => (
+                                        <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50 border">
+                                            <a href={item.value} target="_blank" className="font-mono text-blue-400 hover:underline truncate max-w-[200px]" title={item.value}>
+                                                {item.value.split('/').pop()}
+                                            </a>
+                                            <Badge variant="secondary" className="text-[10px] h-5">PDF</Badge>
+                                        </div>
+                                    ))}
+                                    {results.osint_data.filter(i => i.type === 'pdf').length === 0 && <span className="text-sm text-muted-foreground">None found</span>}
+                                </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <div className="grid gap-6 md:grid-cols-2">
                 {/* Open Ports */}

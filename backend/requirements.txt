@@ -9,3 +9,5 @@ python-nmap
 motor
 playwright
 certifi
+beautifulsoup4
+lxml

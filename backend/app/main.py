@@ -34,7 +34,7 @@ app.add_middleware(
 # In-memory storage for scan results (for quick access before DB persistence)
 SCAN_RESULTS: Dict[str, dict] = {}
 
-async def run_scan_task(scan_id: str, domain: str):
+async def run_scan_task(scan_id: str, domain: str, twitter_handle: str = None):
     """
     Background task to run ALL recon services and update MongoDB.
     """
@@ -52,9 +52,7 @@ async def run_scan_task(scan_id: str, domain: str):
         # 1. Subdomain Discovery
         print("Running Subdomain Discovery...")
         passive_subs = SubdomainService.get_subdomains_crtsh(domain)
-        # Fallback if passive fails: use the domain itself
         if not passive_subs:
-            print("Passive subdomain discovery failed or returned 0. Using main domain only.")
             all_subs = [domain]
         else:
             all_subs = list(set(passive_subs))
@@ -66,42 +64,45 @@ async def run_scan_task(scan_id: str, domain: str):
         import socket
         ports_list = []
         try:
-            # Resolve main domain
             ip = socket.gethostbyname(domain)
-            print(f"Accquired IP: {ip}")
             open_ports = PortScanService.scan_common_ports(ip)
-            print(f"Found ports: {open_ports}")
             port_result = PortResult(ip=ip, ports=open_ports)
             ports_list = [port_result]
         except Exception as e:
             print(f"Port scan failed: {e}")
 
-        # 3. OSINT / Tech Stack & WAF
-        print("Running OSINT...")
+        # 3. OSINT - Tech Stack
+        print("Running Tech Stack Detection...")
         try:
             tech_stack = OsintService.get_tech_stack(domain)
         except:
             tech_stack = []
 
-        # 4. Directory Fuzzing relative to domain
+        # 4. OSINT - Scraper (Emails, Phones, PDFs)
+        print("Running OSINT Scraper...")
+        try:
+            osint_artifacts = await OsintService.run_osint_scraper(domain, twitter_handle)
+        except Exception as e:
+            print(f"OSINT Scraper failed: {e}")
+            osint_artifacts = []
+
+        # 5. Directory Fuzzing
         print("Running Directory Fuzzing...")
         try:
            directories = FuzzingService.brute_force_directories(domain)
         except:
             directories = []
 
-        # 5. Visual Recon (Screenshots)
+        # 6. Visual Recon
         print("Running Visual Recon...")
         screenshots = {}
         try:
-            # Screenshot main domain + top 4 subdomains
             targets_for_screen = [domain] + [s for s in all_subs if s != domain][:4]
             screenshots = await VisualReconService.take_screenshots(targets_for_screen)
         except Exception as e:
              print(f"Visual recon failed: {e}")
 
-        # 6. Vuln Scan (Mock for now or integrate searching)
-        # Simple version check mock
+        # 7. Vuln Scan (Mock)
         vulns = []
         for tech in tech_stack:
             if "Apache" in tech:
@@ -115,6 +116,7 @@ async def run_scan_task(scan_id: str, domain: str):
             "subdomains": sub_result.dict(),
             "ports": [p.dict() for p in ports_list],
             "technologies": tech_stack,
+            "osint_data": osint_artifacts,
             "directories": directories,
             "screenshots": screenshots,
             "vulnerabilities": vulns
@@ -137,7 +139,6 @@ async def run_scan_task(scan_id: str, domain: str):
 
     except Exception as e:
         print(f"Scan failed: {e}")
-        # Failure update
         if scan_id in SCAN_RESULTS:
              SCAN_RESULTS[scan_id]["status"] = "failed"
         try:
@@ -168,13 +169,13 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
     # Save to In-Memory
     SCAN_RESULTS[scan_id] = new_scan.dict()
 
-    # Save to MongoDB (Best Effort)
+    # Save to MongoDB
     try:
         await scan_collection.insert_one(new_scan.dict())
     except Exception as e:
         print(f"DB Write Failed: {e}")
     
-    background_tasks.add_task(run_scan_task, scan_id, request.domain)
+    background_tasks.add_task(run_scan_task, scan_id, request.domain, request.twitter_handle)
     return new_scan
 
 @app.get("/api/scan/{scan_id}", response_model=ScanResult)

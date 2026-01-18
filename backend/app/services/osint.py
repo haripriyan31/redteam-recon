@@ -1,7 +1,29 @@
 import requests
-from typing import List
+import re
+import json
+import subprocess
+from bs4 import BeautifulSoup
+from typing import List, Dict, Any
+
+# Refined Regex - "More Straight" as requested
+EMAIL_REGEX = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b"
+PHONE_REGEX = r"\b(?:\+?\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b"
+PDF_LINK_REGEX = r"\bhttps?://[^\s/]+\/[^\s]+\.pdf\b"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (RedTeam-OSINT/1.0)"
+}
 
 class OsintService:
+    @staticmethod
+    def normalize(v: str, t: str, s: str, c: float = 0.6) -> Dict[str, Any]:
+        return {
+            "value": v,
+            "type": t,
+            "source": s,
+            "confidence": c
+        }
+
     @staticmethod
     def get_tech_stack(domain: str) -> List[str]:
         """
@@ -10,43 +32,100 @@ class OsintService:
         technologies = set()
         url = f"http://{domain}"
         try:
-            response = requests.get(url, timeout=5, verify=False)
+            response = requests.get(url, timeout=5, verify=False, headers=HEADERS)
             headers = response.headers
             
-            # 1. Check Headers
             if 'Server' in headers:
                 technologies.add(f"Server: {headers['Server']}")
             if 'X-Powered-By' in headers:
                 technologies.add(f"Powered By: {headers['X-Powered-By']}")
-            if 'X-AspNet-Version' in headers:
-                technologies.add("ASP.NET")
             
-            # 2. Check Cookies
-            cookies = response.cookies.get_dict()
-            if 'PHPSESSID' in cookies:
-                technologies.add("PHP")
-            if 'JSESSIONID' in cookies:
-                technologies.add("Java/JSP")
-            if 'csrftoken' in cookies: # Common in Django
-                technologies.add("Django (Potential)")
-                
-            # 3. Simple HTML Content checks
             content = response.text.lower()
             if 'wp-content' in content:
                 technologies.add("WordPress")
             if 'react' in content:
                 technologies.add("React (Frontend)")
-            # 4. WAF Detection
-            if 'cf-ray' in headers or 'cf-cache-status' in headers:
+            if 'cf-ray' in headers:
                 technologies.add("WAF: Cloudflare")
-            if 'x-amz-cf-id' in headers:
-                technologies.add("WAF: AWS CloudFront")
-            if 'server' in headers and 'akamai' in headers['server'].lower():
-                technologies.add("WAF: Akamai")
-            if 'x-sucuri-id' in headers:
-                technologies.add("WAF: Sucuri")
 
             return list(technologies)
+        except:
+            return []
+
+    @staticmethod
+    async def run_osint_scraper(domain: str, twitter_handle: str = None) -> List[Dict[str, Any]]:
+        """
+        Main runner for the OSINT scraper logic.
+        """
+        results = []
+        
+        # 1. Scraping Website (Emails/Phones)
+        try:
+            r = requests.get(f"https://{domain}", headers=HEADERS, timeout=10, verify=False)
+            text = r.text
             
-        except requests.RequestException:
-            return ["Unknown (Host unreachable)"]
+            # Emails
+            for e in set(re.findall(EMAIL_REGEX, text)):
+                results.append(OsintService.normalize(e, "email", "website", 0.9))
+            
+            # Phones
+            for p in set(re.findall(PHONE_REGEX, text)):
+                results.append(OsintService.normalize(p.strip(), "phone", "website", 0.7))
+                
+            # PDFs
+            soup = BeautifulSoup(text, "lxml")
+            for link in soup.find_all("a", href=True):
+                href = link["href"]
+                if href.lower().endswith(".pdf"):
+                    if not href.startswith("http"):
+                        href = f"https://{domain}/{href.lstrip('/')}"
+                    results.append(OsintService.normalize(href, "pdf", "website", 0.8))
+                
+                # mailto/tel
+                if href.startswith("mailto:"):
+                    results.append(OsintService.normalize(href.replace("mailto:", ""), "email", "website", 0.95))
+                if href.startswith("tel:"):
+                    results.append(OsintService.normalize(href.replace("tel:", ""), "phone", "website", 0.85))
+        except Exception as e:
+            print(f"Website OSINT error: {e}")
+
+        # 2. CRT.SH
+        try:
+            u = f"https://crt.sh/?q=%25.{domain}&output=json"
+            r = requests.get(u, timeout=15)
+            if r.status_code == 200:
+                for c in r.json():
+                    n = c.get("name_value", "")
+                    for e in re.findall(EMAIL_REGEX, n):
+                        results.append(OsintService.normalize(e, "email", "crt.sh", 0.75))
+        except: pass
+
+        # 3. Reddit
+        try:
+            u = f"https://www.reddit.com/search.json?q={domain}"
+            r = requests.get(u, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                d = r.json()
+                for p in d.get("data", {}).get("children", []):
+                    t = p["data"].get("title", "")
+                    for e in re.findall(EMAIL_REGEX, t):
+                        results.append(OsintService.normalize(e, "email", "reddit", 0.5))
+        except: pass
+
+        # 4. Nitter (Twitter)
+        if twitter_handle:
+            try:
+                r = requests.get(f"https://nitter.net/{twitter_handle}", headers=HEADERS, timeout=10)
+                if r.status_code == 200:
+                    s = BeautifulSoup(r.text, "lxml")
+                    tweets = s.find_all("div", class_="tweet-content")
+                    for x in tweets[:5]:
+                        for e in re.findall(EMAIL_REGEX, x.text):
+                            results.append(OsintService.normalize(e, "email", "twitter", 0.6))
+                        for p in re.findall(PHONE_REGEX, x.text):
+                            results.append(OsintService.normalize(p.strip(), "phone", "twitter", 0.6))
+            except: pass
+
+        # Deduplicate
+        unique_results = {json.dumps(i, sort_keys=True): i for i in results}
+        return list(unique_results.values())
